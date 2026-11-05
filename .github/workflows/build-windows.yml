@@ -1,0 +1,42 @@
+name: Build Windows VST3 and installer
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake -S . -B build -A x64
+      - name: Build VST3
+        run: cmake --build build --config Release --target Multimeter_VST3
+      - name: Locate VST3
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem -Path build -Recurse -Directory -Filter "Multimeter.vst3" | Select-Object -First 1
+          if (-not $plugin) { throw "Multimeter.vst3 not found" }
+          New-Item -ItemType Directory -Force -Path package\VST3 | Out-Null
+          Copy-Item $plugin.FullName package\VST3\Multimeter.vst3 -Recurse
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload installer and plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Multimeter-Windows-x64
+          path: |
+            dist/Multimeter-Setup-x64.exe
+            package/VST3/Multimeter.vst3
+          if-no-files-found: error
+          compression-level: 6
