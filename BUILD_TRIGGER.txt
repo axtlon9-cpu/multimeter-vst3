@@ -1,0 +1,1 @@
+Build validation trigger. The current repository still contains a simplified prototype, not the complete AMXD port.
