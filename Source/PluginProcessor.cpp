@@ -50,6 +50,7 @@ MultimeterAudioProcessor::MultimeterAudioProcessor()
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     for (auto& value : spectrumDb) value.store(dbFloor);
+    spectrumHoldAgeSamples.fill(0);
     for (auto& value : gonioX) value.store(0.0f);
     for (auto& value : gonioY) value.store(0.0f);
 }
@@ -73,6 +74,7 @@ void MultimeterAudioProcessor::getGonioPoint(int index, float& x, float& y) cons
 void MultimeterAudioProcessor::resetHold()
 {
     for (auto& value : spectrumDb) value.store(dbFloor);
+    spectrumHoldAgeSamples.fill(0);
     for (int channel = 0; channel < 2; ++channel)
         peak[(size_t) channel].store(0.0f);
 }
@@ -127,6 +129,9 @@ void MultimeterAudioProcessor::updateSpectrum(float returnRateDbPerSecond,
     const double lowFrequency = 20.0;
     const double highFrequency = juce::jmin(20000.0, nyquist);
     const double hopSeconds = (double) fftSize / currentSampleRate;
+    const int holdTimeIndex = (int) getParameter("holdtime");
+    const double holdSeconds[] = { 2.0, 4.0, 6.0, std::numeric_limits<double>::infinity() };
+    const double holdSamples = holdSeconds[juce::jlimit(0, 3, holdTimeIndex)] * currentSampleRate;
     const int binCount = fftSize / 2;
 
     for (int band = 0; band < spectrumBandCount; ++band)
@@ -157,14 +162,29 @@ void MultimeterAudioProcessor::updateSpectrum(float returnRateDbPerSecond,
         const float targetDb = juce::jlimit(dbFloor, 12.0f, toDb(magnitude));
         const float previous = spectrumDb[(size_t) band].load();
         float next = targetDb;
+        auto& holdAge = spectrumHoldAgeSamples[(size_t) band];
 
-        if (targetDb < previous)
+        if (targetDb >= previous)
+        {
+            holdAge = 0;
+        }
+        else
         {
             if (holdEnabled)
-                next = previous;
+            {
+                holdAge += (uint64_t) fftSize;
+                if ((double) holdAge < holdSamples)
+                    next = previous;
+                else
+                    next = juce::jmax(targetDb,
+                        previous - returnRateDbPerSecond * (float) hopSeconds);
+            }
             else
+            {
+                holdAge = 0;
                 next = juce::jmax(targetDb,
                     previous - returnRateDbPerSecond * (float) hopSeconds);
+            }
         }
         spectrumDb[(size_t) band].store(next);
     }
