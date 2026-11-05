@@ -100,8 +100,8 @@ void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
     {
         kShelf[(size_t) ch].reset();
         kHighPass[(size_t) ch].reset();
-        *kShelf[(size_t) ch].coefficients = *shelf;
-        *kHighPass[(size_t) ch].coefficients = *highPass;
+        kShelf[(size_t) ch].coefficients = shelf;
+        kHighPass[(size_t) ch].coefficients = highPass;
     }
 }
 
