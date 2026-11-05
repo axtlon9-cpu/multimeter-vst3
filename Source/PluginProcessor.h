@@ -57,6 +57,7 @@ private:
     std::array<std::atomic<float>, 2> rms {{0.0f, 0.0f}};
     std::atomic<float> correlation {0.0f};
     std::array<std::atomic<float>, spectrumBandCount> spectrumDb;
+    std::array<uint64_t, spectrumBandCount> spectrumHoldAgeSamples {};
     std::array<std::atomic<float>, gonioPointCount> gonioX;
     std::array<std::atomic<float>, gonioPointCount> gonioY;
     std::atomic<int> gonioWriteIndex {0};
