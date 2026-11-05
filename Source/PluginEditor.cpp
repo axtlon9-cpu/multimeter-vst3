@@ -19,7 +19,7 @@ namespace
     }
 
     void drawLevelBar(juce::Graphics& g, juce::Rectangle<float> bounds,
-                      float rms, float peak, const juce::String& label)
+                      float rms, float peak, const juce::String& label, bool showRms)
     {
         const float dbBottom = -60.0f;
         const float dbTop = 6.0f;
@@ -34,9 +34,12 @@ namespace
         const float rmsDb = juce::jlimit(dbBottom, dbTop, db(rms));
         const float peakDb = juce::jlimit(dbBottom, dbTop, db(peak));
         const float rmsY = mapDbToY(rmsDb, dbTop, dbBottom, meter.getY(), meter.getHeight());
-        auto fill = meter.withTop(rmsY);
-        g.setColour(cyanColour);
-        g.fillRoundedRectangle(fill, 2.0f);
+        if (showRms)
+        {
+            auto fill = meter.withTop(rmsY);
+            g.setColour(cyanColour);
+            g.fillRoundedRectangle(fill, 2.0f);
+        }
         const float peakY = mapDbToY(peakDb, dbTop, dbBottom, meter.getY(), meter.getHeight());
         g.setColour(yellowColour);
         g.fillRect(meter.getX(), peakY - 1.5f, meter.getWidth(), 3.0f);
@@ -301,7 +304,7 @@ void MultimeterAudioProcessorEditor::drawRightMeters(juce::Graphics& g, juce::Re
     g.setFont(12.0f);
     const float luIntegrated = processor.getLufsIntegrated();
     const float luShort = processor.getLufsShortTerm();
-    g.drawText("LUFS", bounds.getX(), bounds.getY(), 78.0f, 18.0f, juce::Justification::centred);
+    g.drawText("LUFS* (UNGATED)", bounds.getX(), bounds.getY(), 112.0f, 18.0f, juce::Justification::centredLeft);
     g.drawText("LU-I " + juce::String(luIntegrated, 1), bounds.getX(), bounds.getY() + 20.0f,
                82.0f, 17.0f, juce::Justification::centredLeft);
     g.drawText("LU-S " + juce::String(luShort, 1), bounds.getX(), bounds.getY() + 38.0f,
@@ -312,10 +315,11 @@ void MultimeterAudioProcessorEditor::drawRightMeters(juce::Graphics& g, juce::Re
     const float meterWidth = 48.0f;
     const float meterGap = 12.0f;
     const float startX = bounds.getX() + 95.0f;
+    const bool showRms = processor.getParameter("levelmode") > 0.5f;
     drawLevelBar(g, { startX, meterY, meterWidth, meterHeight }, processor.getRms(0),
-                 processor.getPeak(0), "L");
+                 processor.getPeak(0), "L", showRms);
     drawLevelBar(g, { startX + meterWidth + meterGap, meterY, meterWidth, meterHeight },
-                 processor.getRms(1), processor.getPeak(1), "R");
+                 processor.getRms(1), processor.getPeak(1), "R", showRms);
 
     const float correlationY = bounds.getBottom() - 35.0f;
     g.setColour(textColour);
