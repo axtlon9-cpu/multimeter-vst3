@@ -19,46 +19,39 @@ namespace
     }
 
     void drawLevelBar(juce::Graphics& g, juce::Rectangle<float> bounds,
-                      float rms, float peak, float peakHold,
-                      const juce::String& label, bool showRms)
+                      float rms, float peak, float peakHold)
     {
         constexpr float dbBottom = -60.0f;
         constexpr float dbTop = 6.0f;
-        const auto db = [](float v) { return v > 1.0e-7f ? 20.0f * std::log10(v) : -80.0f; };
-
-        g.setColour(textColour);
-        g.setFont(12.0f);
-        g.drawText(label, bounds.removeFromTop(18.0f).toNearestInt(), juce::Justification::centred);
-        auto meter = bounds.reduced(8.0f, 2.0f);
-        g.setColour(juce::Colour(0xff263b4a));
-        g.fillRoundedRectangle(meter, 3.0f);
-
-        const float rmsY = mapDbToY(db(rms), dbTop, dbBottom, meter.getY(), meter.getHeight());
-        if (showRms)
+        const auto db = [](float v)
         {
-            g.setColour(cyanColour);
-            g.fillRoundedRectangle(meter.withTop(rmsY), 2.0f);
-        }
+            return v > 1.0e-7f ? 20.0f * std::log10(v) : -80.0f;
+        };
 
+        const auto meter = bounds.reduced(7.0f, 1.0f);
+        g.setColour(juce::Colour(0xff263b4a));
+        g.fillRoundedRectangle(meter, 2.5f);
+
+        // RMS is the solid blue body; peak is the yellow section above it.
+        const float rmsY = mapDbToY(db(rms), dbTop, dbBottom, meter.getY(), meter.getHeight());
         const float peakY = mapDbToY(db(peak), dbTop, dbBottom, meter.getY(), meter.getHeight());
+        g.setColour(cyanColour);
+        g.fillRoundedRectangle(meter.withTop(rmsY), 2.0f);
+
         g.setColour(yellowColour);
-        g.fillRect(meter.getX(), peakY - 1.5f, meter.getWidth(), 3.0f);
+        if (peakY < rmsY)
+            g.fillRect(meter.getX(), peakY, meter.getWidth(), juce::jmax(1.5f, rmsY - peakY));
+        else
+            g.fillRect(meter.getX(), peakY - 1.0f, meter.getWidth(), 2.0f);
 
+        // Bright horizontal marker indicates the held peak.
         const float holdY = mapDbToY(db(peakHold), dbTop, dbBottom, meter.getY(), meter.getHeight());
-        g.setColour(brightText);
-        g.fillRect(meter.getX(), holdY - 1.0f, meter.getWidth(), 1.5f);
-
-        g.setColour(brightText);
-        g.setFont(11.0f);
-        g.drawText("PK " + juce::String(db(peak), 1) + " dB",
-                   (int) bounds.getX(), (int) bounds.getBottom() + 2,
-                   (int) bounds.getWidth(), 16, juce::Justification::centred);
-        g.setColour(textColour);
-        g.drawText("H " + juce::String(db(peakHold), 1),
-                   (int) bounds.getX(), (int) bounds.getBottom() + 17,
-                   (int) bounds.getWidth(), 15, juce::Justification::centred);
+        if (db(peakHold) > dbBottom)
+        {
+            g.setColour(brightText.withAlpha(0.95f));
+            g.fillRect(meter.getX(), holdY - 1.0f, meter.getWidth(), 1.5f);
+        }
     }
-
     void styleLabel(juce::Label& label)
     {
         label.setColour(juce::Label::textColourId, textColour);
@@ -110,7 +103,7 @@ MultimeterAudioProcessorEditor::MultimeterAudioProcessorEditor(MultimeterAudioPr
     configureChoice(weightingBox, "weighting", { "Flat", "A-weight", "C-weight" }, "Frequency weighting");
     configureChoice(holdTimeBox, "holdtime", { "2 s", "4 s", "6 s", "Infinite" }, "Peak hold duration");
     configureChoice(returnRateBox, "returnrate", { "4 dB/s", "6.3 dB/s", "8.6 dB/s", "11.8 dB/s", "20 dB/s", "30 dB/s", "50 dB/s" }, "Meter fall rate");
-    configureChoice(levelModeBox, "levelmode", { "Peak", "Peak & RMS" }, "Level meter display");
+    configureChoice(levelModeBox, "levelmode", { "Peak + RMS" }, "Peak and RMS are shown together");
 
     analyzerButton.setClickingTogglesState(true);
     goniometerButton.setClickingTogglesState(true);
@@ -339,19 +332,23 @@ void MultimeterAudioProcessorEditor::drawAnalyzer(juce::Graphics& g, juce::Recta
         }
     }
 
-    const double frequencies[] = { 31.5, 63.0, 125.0, 250.0, 500.0, 1000.0,
-                                   2000.0, 4000.0, 8000.0, 16000.0 };
-    const juce::String labels[] = { "31", "62", "125", "250", "500", "1 k", "2 k", "4 k", "8 k", "16 k" };
+    const double frequencies[] = { 20.0, 31.5, 63.0, 125.0, 250.0, 500.0, 1000.0,
+                                   2000.0, 4000.0, 8000.0, 16000.0, 20000.0 };
+    const juce::String labels[] = { "20", "31", "63", "125", "250", "500", "1k",
+                                    "2k", "4k", "8k", "16k", "20k" };
     g.setColour(textColour);
-    g.setFont(11.0f);
-    for (int i = 0; i < 10; ++i)
+    g.setFont(10.0f);
+    for (int i = 0; i < 12; ++i)
     {
-        const float x = bounds.getX() + (float) (std::log(frequencies[i] / 20.0) / std::log(20000.0 / 20.0)) * bounds.getWidth();
+        const float x = bounds.getX()
+            + (float) (std::log(frequencies[i] / 20.0) / std::log(20000.0 / 20.0)) * bounds.getWidth();
         g.drawLine(x, bounds.getBottom(), x, bounds.getBottom() + 4.0f, 1.0f);
-        g.drawText(labels[i], (int) x - 22, (int) bounds.getBottom() + 6, 44, 16, juce::Justification::centred);
+        const int labelWidth = 32;
+        const int labelX = i == 0 ? (int) x : (i == 11 ? (int) x - labelWidth : (int) x - labelWidth / 2);
+        const auto alignment = i == 0 ? juce::Justification::centredLeft
+            : (i == 11 ? juce::Justification::centredRight : juce::Justification::centred);
+        g.drawText(labels[i], labelX, (int) bounds.getBottom() + 6, labelWidth, 16, alignment);
     }
-    g.drawText("Hz", (int) bounds.getRight() - 10, (int) bounds.getBottom() + 6, 28, 16, juce::Justification::centredLeft);
-    juce::ignoreUnused(ratio, firstFrequency);
 }
 
 void MultimeterAudioProcessorEditor::drawGoniometer(juce::Graphics& g, juce::Rectangle<float> bounds)
@@ -389,26 +386,54 @@ void MultimeterAudioProcessorEditor::drawGoniometer(juce::Graphics& g, juce::Rec
 
 void MultimeterAudioProcessorEditor::drawRightMeters(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
+    const auto db = [](float value)
+    {
+        return value > 1.0e-7f ? 20.0f * std::log10(value) : -80.0f;
+    };
+
+    const float leftPeak = db(processor.getPeak(0));
+    const float rightPeak = db(processor.getPeak(1));
+    const float leftRms = db(processor.getRms(0));
+    const float rightRms = db(processor.getRms(1));
+
+    // LUFS is a separate loudness readout, not a substitute for RMS.
     g.setColour(textColour);
     g.setFont(12.0f);
-    g.drawText("LUFS* (UNGATED)", bounds.getX(), bounds.getY(), 132.0f, 18.0f, juce::Justification::centredLeft);
-    g.drawText("LU-I " + juce::String(processor.getLufsIntegrated(), 1), bounds.getX(), bounds.getY() + 20.0f,
-               110.0f, 17.0f, juce::Justification::centredLeft);
-    g.drawText("LU-S " + juce::String(processor.getLufsShortTerm(), 1), bounds.getX(), bounds.getY() + 38.0f,
-               110.0f, 17.0f, juce::Justification::centredLeft);
+    g.drawText("LUFS", bounds.getX(), bounds.getY(), 100.0f, 18.0f, juce::Justification::centredLeft);
+    g.setFont(10.5f);
+    g.drawText("LU-I " + juce::String(processor.getLufsIntegrated(), 1),
+               bounds.getX(), bounds.getY() + 20.0f, 100.0f, 16.0f, juce::Justification::centredLeft);
+    g.drawText("LU-S " + juce::String(processor.getLufsShortTerm(), 1),
+               bounds.getX(), bounds.getY() + 38.0f, 100.0f, 16.0f, juce::Justification::centredLeft);
 
-    const float meterY = bounds.getY() + 72.0f;
-    const float meterHeight = juce::jmax(140.0f, bounds.getHeight() - 178.0f);
-    const float meterWidth = 50.0f;
-    const float meterGap = 13.0f;
-    const float startX = bounds.getX() + 112.0f;
-    const bool showRms = processor.getParameter("levelmode") > 0.5f;
-    drawLevelBar(g, { startX, meterY, meterWidth, meterHeight }, processor.getRms(0),
-                 processor.getPeak(0), processor.getPeakHold(0), "L", showRms);
-    drawLevelBar(g, { startX + meterWidth + meterGap, meterY, meterWidth, meterHeight },
-                 processor.getRms(1), processor.getPeak(1), processor.getPeakHold(1), "R", showRms);
+    const float firstColumnX = bounds.getX() + 112.0f;
+    const float columnWidth = 70.0f;
+    const float secondColumnX = firstColumnX + columnWidth;
+    g.setFont(11.0f);
+    g.setColour(brightText);
+    g.drawText("L", (int) firstColumnX, (int) bounds.getY(), (int) columnWidth, 16, juce::Justification::centred);
+    g.drawText("R", (int) secondColumnX, (int) bounds.getY(), (int) columnWidth, 16, juce::Justification::centred);
+    g.setFont(9.5f);
+    g.setColour(yellowColour);
+    g.drawText("PK " + juce::String(leftPeak, 1), (int) firstColumnX, (int) bounds.getY() + 17,
+               (int) columnWidth, 14, juce::Justification::centred);
+    g.drawText("PK " + juce::String(rightPeak, 1), (int) secondColumnX, (int) bounds.getY() + 17,
+               (int) columnWidth, 14, juce::Justification::centred);
+    g.setColour(cyanColour);
+    g.drawText("RMS " + juce::String(leftRms, 1), (int) firstColumnX, (int) bounds.getY() + 33,
+               (int) columnWidth, 14, juce::Justification::centred);
+    g.drawText("RMS " + juce::String(rightRms, 1), (int) secondColumnX, (int) bounds.getY() + 33,
+               (int) columnWidth, 14, juce::Justification::centred);
 
+    const float meterY = bounds.getY() + 56.0f;
     const float correlationY = bounds.getBottom() - 48.0f;
+    const float meterHeight = juce::jmax(100.0f, correlationY - meterY - 30.0f);
+    const float meterWidth = 48.0f;
+    drawLevelBar(g, { firstColumnX + 11.0f, meterY, meterWidth, meterHeight },
+                 processor.getRms(0), processor.getPeak(0), processor.getPeakHold(0));
+    drawLevelBar(g, { secondColumnX + 11.0f, meterY, meterWidth, meterHeight },
+                 processor.getRms(1), processor.getPeak(1), processor.getPeakHold(1));
+
     g.setColour(textColour);
     g.setFont(11.0f);
     g.drawText("CORRELATION", bounds.getX(), correlationY - 23.0f,
