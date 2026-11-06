@@ -32,19 +32,18 @@ namespace
         g.setColour(juce::Colour(0xff263b4a));
         g.fillRoundedRectangle(meter, 2.5f);
 
-        // RMS is the solid blue body; peak is the yellow section above it.
+        // Stable 600 ms RMS average is the blue body.
         const float rmsY = mapDbToY(db(rms), dbTop, dbBottom, meter.getY(), meter.getHeight());
         const float peakY = mapDbToY(db(peak), dbTop, dbBottom, meter.getY(), meter.getHeight());
         g.setColour(cyanColour);
         g.fillRoundedRectangle(meter.withTop(rmsY), 2.0f);
 
+        // Peak is a distinct yellow 5 px marker, so its level remains readable
+        // even when the crest factor is small or a clipper reduces transients.
         g.setColour(yellowColour);
-        if (peakY < rmsY)
-            g.fillRect(meter.getX(), peakY, meter.getWidth(), juce::jmax(1.5f, rmsY - peakY));
-        else
-            g.fillRect(meter.getX(), peakY - 1.0f, meter.getWidth(), 2.0f);
+        g.fillRect(meter.getX(), peakY - 2.5f, meter.getWidth(), 5.0f);
 
-        // Bright horizontal marker indicates the held peak.
+        // Bright horizontal marker indicates the separately-held maximum.
         const float holdY = mapDbToY(db(peakHold), dbTop, dbBottom, meter.getY(), meter.getHeight());
         if (db(peakHold) > dbBottom)
         {
