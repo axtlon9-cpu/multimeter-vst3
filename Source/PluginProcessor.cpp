@@ -232,7 +232,7 @@ void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
     limiterSampleCounter = 0;
     dequeHead = dequeTail = 0;
     limiterGain = 1.0f;
-    previousLimiterInputLeft = previousLimiterInputRight = 0.0f;
+    previousLimiterInputLeft = previousLimiterInputRight = 0.0f;\n    previousLimiterInputLeft2 = previousLimiterInputRight2 = 0.0f;\n    previousLimiterInputLeft3 = previousLimiterInputRight3 = 0.0f;
     limiterWasEnabled = false;
     limiterGainReductionDb.store(0.0f);
     setLatencySamples(lookAheadSamples);
@@ -388,17 +388,31 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
         const float prevL = previousLimiterInputLeft;
         const float prevR = previousLimiterInputRight;
+        const float prev2L = previousLimiterInputLeft2;
+        const float prev2R = previousLimiterInputRight2;
+        const float prev3L = previousLimiterInputLeft3;
+        const float prev3R = previousLimiterInputRight3;
+        previousLimiterInputLeft3 = previousLimiterInputLeft2;
+        previousLimiterInputRight3 = previousLimiterInputRight2;
+        previousLimiterInputLeft2 = previousLimiterInputLeft;
+        previousLimiterInputRight2 = previousLimiterInputRight;
         previousLimiterInputLeft = inputL;
         previousLimiterInputRight = inputR;
+
         float detectorPeak = juce::jmax(std::abs(inputL), std::abs(inputR));
-        // Four sub-sample points approximate inter-sample peaks for limiter triggering.
+        // Four-point Lagrange interpolation checks three inter-sample positions
+        // across the most recent interval without adding another signal path.
         for (int os = 1; os < 4; ++os)
         {
-            const float fraction = (float) os * 0.25f;
+            const double t = -1.0 + (double) os * 0.25;
+            const double w3 = (t + 2.0) * (t + 1.0) * t / -6.0;
+            const double w2 = (t + 3.0) * (t + 1.0) * t / 2.0;
+            const double w1 = (t + 3.0) * (t + 2.0) * t / -2.0;
+            const double w0 = (t + 3.0) * (t + 2.0) * (t + 1.0) / 6.0;
+            const float interpolatedL = (float) (w3 * prev3L + w2 * prev2L + w1 * prevL + w0 * inputL);
+            const float interpolatedR = (float) (w3 * prev3R + w2 * prev2R + w1 * prevR + w0 * inputR);
             detectorPeak = juce::jmax(detectorPeak,
-                std::abs(prevL + (inputL - prevL) * fraction));
-            detectorPeak = juce::jmax(detectorPeak,
-                std::abs(prevR + (inputR - prevR) * fraction));
+                juce::jmax(std::abs(interpolatedL), std::abs(interpolatedR)));
         }
 
         const size_t dequeCapacity = limiterPeakDequeValues.size();
