@@ -76,7 +76,7 @@ private:
     std::array<std::array<BandCoefficients, spectrumBandCount>, 2> filterBanks {};
     std::array<BandState, spectrumBandCount> bands {};
     std::array<std::array<double, spectrumBandCount>, 2> centreFrequencies {};
-    std::array<std::atomic<float>, spectrumBandCount> spectrumDb;
+    std::array<std::atomic<float>, spectrumBandCount> spectrumDb;\n    std::array<float, spectrumBandCount> spectrumDisplayState {};
     std::array<std::atomic<float>, spectrumBandCount> spectrumHoldDb;
     int currentBandMode = -1;
     int currentDetectionMode = -1;
