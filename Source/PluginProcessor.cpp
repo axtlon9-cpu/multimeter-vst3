@@ -177,14 +177,7 @@ void MultimeterAudioProcessor::getGonioPoint(int index, float& x, float& y) cons
 
 void MultimeterAudioProcessor::resetHold()
 {
-    for (auto& b : bands) { b.heldPeak = 0.0f; b.holdAge = 0; }
-    for (auto& v : spectrumHoldDb) v.store(dbFloor);
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        meterPeakHeld[(size_t) ch] = 0.0f;
-        meterHoldAge[(size_t) ch] = 0;
-        peakHold[(size_t) ch].store(0.0f);
-    }
+    resetHoldRequested.store(true, std::memory_order_release);
 }
 
 void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
@@ -239,6 +232,7 @@ void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
     limiterSampleCounter = 0;
     dequeHead = dequeTail = 0;
     limiterGain = 1.0f;
+    previousLimiterInputLeft = previousLimiterInputRight = 0.0f;
     limiterWasEnabled = false;
     limiterGainReductionDb.store(0.0f);
     setLatencySamples(lookAheadSamples);
@@ -271,8 +265,9 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int holdTimeIndex = juce::jlimit(0, 3, (int) getParameter("holdtime"));
     const double holdTimes[] = { 2.0, 4.0, 6.0, std::numeric_limits<double>::infinity() };
     const double holdSamples = holdTimes[holdTimeIndex] * currentSampleRate;
-    const double rmsTau = meterMode == 0 ? 0.300 : 0.050;
-    const double rmsAlpha = std::exp(-1.0 / (currentSampleRate * rmsTau));
+    const double slowAlpha = std::exp(-1.0 / (currentSampleRate * 0.300));
+    const double fastAlpha = std::exp(-1.0 / (currentSampleRate * 0.050));
+    const double rmsAlpha = meterMode == 0 ? slowAlpha : fastAlpha;
     const double specTau = getParameter("spectrumSmooth");
     const double specAlpha = std::exp(-1.0 / (currentSampleRate * specTau));
     const double correlationTau = getParameter("correlationSmooth");
@@ -288,6 +283,17 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         resetBandHistories();
         currentBandMode = bandMode;
         currentDetectionMode = detectMode;
+    }
+    if (resetHoldRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        for (auto& b : bands) { b.heldPeak = dbFloor; b.holdAge = 0; }
+        for (auto& v : spectrumHoldDb) v.store(dbFloor, std::memory_order_relaxed);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            meterPeakHeld[(size_t) ch] = 0.0f;
+            meterHoldAge[(size_t) ch] = 0;
+            peakHold[(size_t) ch].store(0.0f, std::memory_order_relaxed);
+        }
     }
 
     auto* outL = buffer.getWritePointer(0);
@@ -330,8 +336,8 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 selectedPeak = std::sqrt((float) selectedPower);
             }
 
-            state.powerSlow = 0.999 * state.powerSlow + 0.001 * selectedPower;
-            state.powerFast = specAlpha * state.powerFast + (1.0 - specAlpha) * selectedPower;
+            state.powerSlow = slowAlpha * state.powerSlow + (1.0 - slowAlpha) * selectedPower;
+            state.powerFast = fastAlpha * state.powerFast + (1.0 - fastAlpha) * selectedPower;
             state.peakEnvelope = juce::jmax(selectedPeak, state.peakEnvelope * peakDecay);
 
             const double rawPower = meterMode == 0 ? state.powerSlow : state.powerFast;
@@ -341,7 +347,8 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
 
             const float priorDb = spectrumDb[(size_t) band].load(std::memory_order_relaxed);
-            const float smoothing = targetDb > priorDb ? 0.025f : 0.004f;
+            const double displayTau = targetDb > priorDb ? juce::jmax(0.020, specTau * 0.35) : specTau;
+            const float smoothing = (float) (1.0 - std::exp(-1.0 / (currentSampleRate * displayTau)));
             const float displayDb = priorDb + smoothing * (targetDb - priorDb);
             spectrumDb[(size_t) band].store(displayDb, std::memory_order_relaxed);
 
@@ -379,8 +386,10 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         limiterDelayLeft[(size_t) writeSlot] = inputL;
         limiterDelayRight[(size_t) writeSlot] = inputR;
 
-        const float prevL = sample == 0 ? inputL : inL[sample - 1];
-        const float prevR = sample == 0 ? inputR : inR[sample - 1];
+        const float prevL = previousLimiterInputLeft;
+        const float prevR = previousLimiterInputRight;
+        previousLimiterInputLeft = inputL;
+        previousLimiterInputRight = inputR;
         float detectorPeak = juce::jmax(std::abs(inputL), std::abs(inputR));
         // Four sub-sample points approximate inter-sample peaks for limiter triggering.
         for (int os = 1; os < 4; ++os)
