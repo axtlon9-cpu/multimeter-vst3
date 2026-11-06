@@ -43,7 +43,7 @@ MultimeterAudioProcessor::ParameterState::ParameterLayout MultimeterAudioProcess
     p.add(std::make_unique<juce::AudioParameterChoice>("returnrate", "Return Rate",
         rateChoices(), 3));
     p.add(std::make_unique<juce::AudioParameterChoice>("levelmode", "Level",
-        juce::StringArray { "Peak", "Peak & RMS" }, 1));
+        juce::StringArray { "Peak + RMS" }, 0));
     p.add(std::make_unique<juce::AudioParameterChoice>("weighting", "Weighting",
         juce::StringArray { "Flat", "A-weight", "C-weight" }, 0));
     p.add(std::make_unique<juce::AudioParameterBool>("limiter", "Peak Limiter", false));
@@ -107,7 +107,8 @@ void MultimeterAudioProcessor::buildFilterBanks()
         for (int band = 0; band < spectrumBandCount; ++band)
         {
             const double exponent = mode == 1 ? (double) band : (double) (2 * band + 2);
-            const double fc = 15.625 * std::pow(2.0, exponent / 6.0);
+            const double nominalFc = 15.625 * std::pow(2.0, exponent / 6.0);
+            const double fc = band == spectrumBandCount - 1 ? 20000.0 : nominalFc;
             centreFrequencies[(size_t) mode][(size_t) band] = fc;
             const double w = std::tan(pi * juce::jmin(fc, currentSampleRate * 0.47) / currentSampleRate);
             const double bw = w * w / (juce::jmax(1.0e-12, std::atan(w)) * qValues[mode]);
@@ -271,7 +272,9 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const double holdSamples = holdTimes[holdTimeIndex] * currentSampleRate;
     const double slowAlpha = std::exp(-1.0 / (currentSampleRate * 0.300));
     const double fastAlpha = std::exp(-1.0 / (currentSampleRate * 0.050));
-    const double rmsAlpha = meterMode == 0 ? slowAlpha : fastAlpha;
+    // Keep the output RMS meter independent from the analyzer response mode.
+    // A 300 ms integration gives the blue RMS column a stable, readable movement.
+    const double rmsAlpha = slowAlpha;
     const double specTau = getParameter("spectrumSmooth");
     const double correlationTau = getParameter("correlationSmooth");
     const double corrAlpha = std::exp(-1.0 / (currentSampleRate * correlationTau));
