@@ -210,7 +210,15 @@ void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
         meterPeakEnvelope[(size_t) ch] = meterPeakHeld[(size_t) ch] = 0.0f;
         meterPeakAge[(size_t) ch] = meterHoldAge[(size_t) ch] = 0;
         meterRmsPower[(size_t) ch] = 0.0;
+        meterRmsWindowSum[(size_t) ch] = 0.0;
     }
+
+    // Use a true 600 ms moving RMS window, independent of analyzer mode.
+    meterRmsWindowLength = juce::jmax(1, (int) std::round(currentSampleRate * 0.600));
+    meterRmsWindowWrite = 0;
+    meterRmsWindowCount = 0;
+    for (auto& window : meterRmsWindow)
+        window.assign((size_t) meterRmsWindowLength, 0.0);
 
     const auto shelf = juce::dsp::IIR::Coefficients<float>::makeHighShelf(
         currentSampleRate, 1681.974450955533, 0.7071752369554196,
@@ -272,13 +280,13 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const double holdSamples = holdTimes[holdTimeIndex] * currentSampleRate;
     const double slowAlpha = std::exp(-1.0 / (currentSampleRate * 0.300));
     const double fastAlpha = std::exp(-1.0 / (currentSampleRate * 0.050));
-    // Keep the output RMS meter independent from the analyzer response mode.
-    // A 300 ms integration gives the blue RMS column a stable, readable movement.
-    const double rmsAlpha = slowAlpha;
     const double specTau = getParameter("spectrumSmooth");
     const double correlationTau = getParameter("correlationSmooth");
     const double corrAlpha = std::exp(-1.0 / (currentSampleRate * correlationTau));
     const float peakDecay = std::exp(-returnRate * 0.11512925465f / (float) currentSampleRate);
+    // Output peak meter release is independent of analyzer/hold release.
+    // 24 dB/s lets a clipped peak visibly fall without making the meter twitchy.
+    const float meterPeakDecay = std::exp(-24.0f * 0.11512925465f / (float) currentSampleRate);
     const bool limiterEnabled = getParameter("limiter") > 0.5f;
     const float ceilingGain = dbToGain(getParameter("ceiling"));
     const float limiterReleaseSeconds = juce::jmax(0.010f, getParameter("release") * 0.001f);
@@ -442,9 +450,17 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         for (int ch = 0; ch < 2; ++ch)
         {
             const size_t channel = (size_t) ch;
-            meterPeakEnvelope[channel] = juce::jmax(outputPeak[ch], meterPeakEnvelope[channel] * peakDecay);
-            meterRmsPower[channel] = rmsAlpha * meterRmsPower[channel]
-                + (1.0 - rmsAlpha) * (double) outputValue[ch] * outputValue[ch];
+            meterPeakEnvelope[channel] = juce::jmax(outputPeak[ch],
+                                                     meterPeakEnvelope[channel] * meterPeakDecay);
+
+            // Sliding average of squared post-effect output samples.
+            auto& window = meterRmsWindow[channel];
+            if (meterRmsWindowCount >= meterRmsWindowLength)
+                meterRmsWindowSum[channel] -= window[(size_t) meterRmsWindowWrite];
+            const double squaredSample = (double) outputValue[ch] * outputValue[ch];
+            window[(size_t) meterRmsWindowWrite] = squaredSample;
+            meterRmsWindowSum[channel] += squaredSample;
+
             if (outputPeak[ch] >= meterPeakHeld[channel])
             {
                 meterPeakHeld[channel] = outputPeak[ch];
@@ -458,6 +474,8 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             }
             meterPeakAge[channel]++;
         }
+        meterRmsWindowWrite = (meterRmsWindowWrite + 1) % meterRmsWindowLength;
+        meterRmsWindowCount = juce::jmin(meterRmsWindowCount + 1, meterRmsWindowLength);
 
         // Averaged phase correlation: cross and channel powers share the same time constant.
         correlationLeftPower = corrAlpha * correlationLeftPower
@@ -542,7 +560,9 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     {
         peak[(size_t) ch].store(meterPeakEnvelope[(size_t) ch], std::memory_order_relaxed);
         peakHold[(size_t) ch].store(meterPeakHeld[(size_t) ch], std::memory_order_relaxed);
-        rms[(size_t) ch].store((float) std::sqrt(juce::jmax(0.0, meterRmsPower[(size_t) ch])),
+        const double windowMeanPower = meterRmsWindowCount > 0
+            ? meterRmsWindowSum[(size_t) ch] / (double) meterRmsWindowCount : 0.0;
+        rms[(size_t) ch].store((float) std::sqrt(juce::jmax(0.0, windowMeanPower)),
                                std::memory_order_relaxed);
     }
     correlation.store(blockCorrelationValue, std::memory_order_relaxed);
