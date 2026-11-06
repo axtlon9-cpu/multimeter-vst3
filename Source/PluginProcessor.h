@@ -120,7 +120,7 @@ private:
     uint64_t limiterSampleCounter = 0;
     uint64_t dequeHead = 0, dequeTail = 0;
     float limiterGain = 1.0f;
-    float previousLimiterInputLeft = 0.0f, previousLimiterInputRight = 0.0f;
+    float previousLimiterInputLeft = 0.0f, previousLimiterInputRight = 0.0f;\n    float previousLimiterInputLeft2 = 0.0f, previousLimiterInputRight2 = 0.0f;\n    float previousLimiterInputLeft3 = 0.0f, previousLimiterInputRight3 = 0.0f;
     bool limiterWasEnabled = false;
     std::atomic<float> limiterGainReductionDb {0.0f};
     std::atomic<bool> resetHoldRequested {false};
