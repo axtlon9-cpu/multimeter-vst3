@@ -343,7 +343,7 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             const double rawPower = meterMode == 0 ? state.powerSlow : state.powerFast;
             const float rawMagnitude = meterMode == 2 ? state.peakEnvelope : (float) std::sqrt(juce::jmax(0.0, rawPower));
             const float weightedDb = toDb(rawMagnitude) + weightingCorrectionDb(
-                (float) centreFrequencies[(size_t) bandMode][(size_t) band], weightingMode);
+                static_cast<float>(centreFrequencies[(size_t) bandMode][(size_t) band]), weightingMode);
             const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
 
             const float priorDb = spectrumDb[(size_t) band].load(std::memory_order_relaxed);
