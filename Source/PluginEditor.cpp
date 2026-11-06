@@ -239,8 +239,6 @@ void MultimeterAudioProcessorEditor::resized()
 
     topBox.setBounds(84, 82, 112, 28);
     rangeBox.setBounds(270, 82, 112, 28);
-    weightingBox.setBounds(462, 82, 132, 28);
-    levelModeBox.setBounds(width - 182, 82, 154, 28);
 
     detectionLabel.setBounds(leftX, bottomY + 8, leftW, 18);
     detectionBox.setBounds(leftX, bottomY + 28, leftW, 28);
@@ -288,8 +286,6 @@ void MultimeterAudioProcessorEditor::paint(juce::Graphics& g)
     g.setFont(12.0f);
     g.drawText("Top:", 36, 85, 42, 20, juce::Justification::centredLeft);
     g.drawText("Range:", 212, 85, 55, 20, juce::Justification::centredLeft);
-    g.drawText("Weight:", 405, 85, 55, 20, juce::Justification::centredLeft);
-    g.drawText("Level:", width - 236, 85, 52, 20, juce::Justification::centredLeft);
 
     juce::Rectangle<float> plot(48.0f, 132.0f, (float) width - 425.0f, (float) bottomY - 155.0f);
     if (processor.getParameter("view") < 0.5f) drawAnalyzer(g, plot);
