@@ -91,7 +91,15 @@ private:
     std::array<float, 2> meterPeakHeld {{0.0f, 0.0f}};
     std::array<uint64_t, 2> meterPeakAge {{0, 0}};
     std::array<uint64_t, 2> meterHoldAge {{0, 0}};
+
+    // Exact sliding-window RMS: 500 ms of squared output samples per channel.
+    // The ring buffers are allocated in prepareToPlay, never on the audio thread.
+    std::array<std::vector<double>, 2> meterRmsWindow;
+    std::array<double, 2> meterRmsWindowSum {{0.0, 0.0}};
     std::array<double, 2> meterRmsPower {{0.0, 0.0}};
+    int meterRmsWindowLength = 1;
+    int meterRmsWindowWrite = 0;
+    int meterRmsWindowCount = 0;
 
     std::atomic<float> correlation {0.0f};
     double correlationLeftPower = 1.0e-12;
