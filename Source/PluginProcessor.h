@@ -123,6 +123,7 @@ private:
     float previousLimiterInputLeft = 0.0f, previousLimiterInputRight = 0.0f;
     bool limiterWasEnabled = false;
     std::atomic<float> limiterGainReductionDb {0.0f};
+    std::atomic<bool> resetHoldRequested {false};
 
     double currentSampleRate = 44100.0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MultimeterAudioProcessor)
