@@ -343,40 +343,6 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             state.powerFast = fastAlpha * state.powerFast + (1.0 - fastAlpha) * selectedPower;
             state.peakEnvelope = juce::jmax(selectedPeak, state.peakEnvelope * peakDecay);
 
-            const double rawPower = meterMode == 0 ? state.powerSlow : state.powerFast;
-            const float rawMagnitude = meterMode == 2 ? state.peakEnvelope : (float) std::sqrt(juce::jmax(0.0, rawPower));
-            const float weightedDb = toDb(rawMagnitude) + weightingCorrectionDb(
-                static_cast<float>(centreFrequencies[(size_t) bandMode][(size_t) band]), weightingMode);
-            const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
-
-            const float priorDb = spectrumDisplayState[(size_t) band];
-            const double displayTau = targetDb > priorDb ? juce::jmax(0.020, specTau * 0.35) : specTau;
-            const float smoothing = (float) (1.0 - std::exp(-1.0 / (currentSampleRate * displayTau)));
-            const float displayDb = priorDb + smoothing * (targetDb - priorDb);
-            spectrumDisplayState[(size_t) band] = displayDb;
-
-            if (holdEnabled)
-            {
-                if (targetDb >= state.heldPeak)
-                {
-                    state.heldPeak = targetDb;
-                    state.holdAge = 0;
-                }
-                else
-                {
-                    state.holdAge++;
-                    if ((double) state.holdAge > holdSamples)
-                    {
-                        const float released = state.heldPeak - returnRate / (float) currentSampleRate * 0.11512925465f;
-                        state.heldPeak = juce::jmax(targetDb, released);
-                    }
-                }
-            }
-            else
-            {
-                state.heldPeak = targetDb;
-                state.holdAge = 0;
-            }
         }
 
         // Stereo-linked look-ahead limiter. The max deque is updated without allocation.
@@ -521,10 +487,50 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         if (publishCounter >= publishInterval)
         {
             publishCounter = 0;
+            const double displayStepSeconds = (double) publishInterval / currentSampleRate;
             for (int band = 0; band < bandCount; ++band)
             {
-                spectrumDb[(size_t) band].store(spectrumDisplayState[(size_t) band], std::memory_order_relaxed);
-                spectrumHoldDb[(size_t) band].store(bands[(size_t) band].heldPeak, std::memory_order_relaxed);
+                auto& state = bands[(size_t) band];
+                const double rawPower = meterMode == 0 ? state.powerSlow : state.powerFast;
+                const float rawMagnitude = meterMode == 2
+                    ? state.peakEnvelope
+                    : (float) std::sqrt(juce::jmax(0.0, rawPower));
+                const float weightedDb = toDb(rawMagnitude) + weightingCorrectionDb(
+                    (float) centreFrequencies[(size_t) bandMode][(size_t) band], weightingMode);
+                const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
+
+                const float priorDb = spectrumDisplayState[(size_t) band];
+                const double displayTau = targetDb > priorDb ? juce::jmax(0.020, specTau * 0.35) : specTau;
+                const float smoothing = (float) (1.0 - std::exp(-displayStepSeconds / displayTau));
+                const float displayDb = priorDb + smoothing * (targetDb - priorDb);
+                spectrumDisplayState[(size_t) band] = displayDb;
+
+                if (holdEnabled)
+                {
+                    if (targetDb >= state.heldPeak)
+                    {
+                        state.heldPeak = targetDb;
+                        state.holdAge = 0;
+                    }
+                    else
+                    {
+                        state.holdAge += (uint64_t) publishInterval;
+                        if ((double) state.holdAge > holdSamples)
+                        {
+                            const float released = state.heldPeak
+                                - returnRate * (float) displayStepSeconds * 0.11512925465f;
+                            state.heldPeak = juce::jmax(targetDb, released);
+                        }
+                    }
+                }
+                else
+                {
+                    state.heldPeak = targetDb;
+                    state.holdAge = 0;
+                }
+
+                spectrumDb[(size_t) band].store(displayDb, std::memory_order_relaxed);
+                spectrumHoldDb[(size_t) band].store(state.heldPeak, std::memory_order_relaxed);
             }
         }
     }
