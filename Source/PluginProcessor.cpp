@@ -107,7 +107,7 @@ void MultimeterAudioProcessor::buildFilterBanks()
         {
             const double exponent = mode == 1 ? (double) band : (double) (2 * band + 2);
             const double fc = 15.625 * std::pow(2.0, exponent / 6.0);
-            centreFrequencies[(size_t) band] = fc;
+            centreFrequencies[(size_t) mode][(size_t) band] = fc;
             const double w = std::tan(pi * juce::jmin(fc, currentSampleRate * 0.47) / currentSampleRate);
             const double bw = w * w / (juce::jmax(1.0e-12, std::atan(w)) * qValues[mode]);
             const double dr = -0.5 * bw * bw - 4.0 * w * w;
@@ -343,7 +343,7 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             const double rawPower = meterMode == 0 ? state.powerSlow : state.powerFast;
             const float rawMagnitude = meterMode == 2 ? state.peakEnvelope : (float) std::sqrt(juce::jmax(0.0, rawPower));
             const float weightedDb = toDb(rawMagnitude) + weightingCorrectionDb(
-                (float) centreFrequencies[(size_t) band], weightingMode);
+                (float) centreFrequencies[(size_t) bandMode][(size_t) band], weightingMode);
             const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
 
             const float priorDb = spectrumDb[(size_t) band].load(std::memory_order_relaxed);
