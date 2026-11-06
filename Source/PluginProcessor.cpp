@@ -504,7 +504,7 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         const double correlationDenominator = std::sqrt(correlationLeftPower * correlationRightPower);
         const float corrValue = correlationDenominator > 1.0e-12
             ? (float) juce::jlimit(-1.0, 1.0, correlationCrossPower / correlationDenominator) : 0.0f;
-        correlation.store(corrValue, std::memory_order_relaxed);
+        blockCorrelationValue = corrValue;
 
         // Goniometer: M/S (sum/difference) with a fixed decimation cadence.
         if (++gonioDecimator >= 8)
