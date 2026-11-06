@@ -76,7 +76,8 @@ private:
     std::array<std::array<BandCoefficients, spectrumBandCount>, 2> filterBanks {};
     std::array<BandState, spectrumBandCount> bands {};
     std::array<std::array<double, spectrumBandCount>, 2> centreFrequencies {};
-    std::array<std::atomic<float>, spectrumBandCount> spectrumDb;\n    std::array<float, spectrumBandCount> spectrumDisplayState {};
+    std::array<std::atomic<float>, spectrumBandCount> spectrumDb;
+    std::array<float, spectrumBandCount> spectrumDisplayState {};
     std::array<std::atomic<float>, spectrumBandCount> spectrumHoldDb;
     int currentBandMode = -1;
     int currentDetectionMode = -1;
@@ -120,7 +121,9 @@ private:
     uint64_t limiterSampleCounter = 0;
     uint64_t dequeHead = 0, dequeTail = 0;
     float limiterGain = 1.0f;
-    float previousLimiterInputLeft = 0.0f, previousLimiterInputRight = 0.0f;\n    float previousLimiterInputLeft2 = 0.0f, previousLimiterInputRight2 = 0.0f;\n    float previousLimiterInputLeft3 = 0.0f, previousLimiterInputRight3 = 0.0f;
+    float previousLimiterInputLeft = 0.0f, previousLimiterInputRight = 0.0f;
+    float previousLimiterInputLeft2 = 0.0f, previousLimiterInputRight2 = 0.0f;
+    float previousLimiterInputLeft3 = 0.0f, previousLimiterInputRight3 = 0.0f;
     bool limiterWasEnabled = false;
     std::atomic<float> limiterGainReductionDb {0.0f};
     std::atomic<bool> resetHoldRequested {false};
