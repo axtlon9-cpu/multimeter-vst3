@@ -66,6 +66,7 @@ MultimeterAudioProcessor::MultimeterAudioProcessor()
 {
     for (auto& v : spectrumDb) v.store(dbFloor);
     for (auto& v : spectrumHoldDb) v.store(dbFloor);
+    spectrumDisplayState.fill(dbFloor);
     for (auto& v : gonioX) v.store(0.0f);
     for (auto& v : gonioY) v.store(0.0f);
 }
@@ -165,6 +166,7 @@ void MultimeterAudioProcessor::resetBandHistories()
     for (auto& b : bands) b = BandState {};
     for (auto& v : spectrumDb) v.store(dbFloor);
     for (auto& v : spectrumHoldDb) v.store(dbFloor);
+    spectrumDisplayState.fill(dbFloor);
 }
 
 void MultimeterAudioProcessor::getGonioPoint(int index, float& x, float& y) const
@@ -232,7 +234,9 @@ void MultimeterAudioProcessor::prepareToPlay(double sampleRate, int)
     limiterSampleCounter = 0;
     dequeHead = dequeTail = 0;
     limiterGain = 1.0f;
-    previousLimiterInputLeft = previousLimiterInputRight = 0.0f;\n    previousLimiterInputLeft2 = previousLimiterInputRight2 = 0.0f;\n    previousLimiterInputLeft3 = previousLimiterInputRight3 = 0.0f;
+    previousLimiterInputLeft = previousLimiterInputRight = 0.0f;
+    previousLimiterInputLeft2 = previousLimiterInputRight2 = 0.0f;
+    previousLimiterInputLeft3 = previousLimiterInputRight3 = 0.0f;
     limiterWasEnabled = false;
     limiterGainReductionDb.store(0.0f);
     setLatencySamples(lookAheadSamples);
@@ -269,7 +273,6 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const double fastAlpha = std::exp(-1.0 / (currentSampleRate * 0.050));
     const double rmsAlpha = meterMode == 0 ? slowAlpha : fastAlpha;
     const double specTau = getParameter("spectrumSmooth");
-    const double specAlpha = std::exp(-1.0 / (currentSampleRate * specTau));
     const double correlationTau = getParameter("correlationSmooth");
     const double corrAlpha = std::exp(-1.0 / (currentSampleRate * correlationTau));
     const float peakDecay = std::exp(-returnRate * 0.11512925465f / (float) currentSampleRate);
@@ -303,7 +306,7 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const bool monoOutput = outputChannels == 1;
 
     double blockLoudnessEnergy = 0.0;
-    const double loudnessAlpha = std::exp(-1.0 / (currentSampleRate * 0.400));
+    float blockCorrelationValue = correlation.load(std::memory_order_relaxed);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
@@ -346,11 +349,11 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 static_cast<float>(centreFrequencies[(size_t) bandMode][(size_t) band]), weightingMode);
             const float targetDb = juce::jlimit(dbFloor, 12.0f, weightedDb);
 
-            const float priorDb = spectrumDb[(size_t) band].load(std::memory_order_relaxed);
+            const float priorDb = spectrumDisplayState[(size_t) band];
             const double displayTau = targetDb > priorDb ? juce::jmax(0.020, specTau * 0.35) : specTau;
             const float smoothing = (float) (1.0 - std::exp(-1.0 / (currentSampleRate * displayTau)));
             const float displayDb = priorDb + smoothing * (targetDb - priorDb);
-            spectrumDb[(size_t) band].store(displayDb, std::memory_order_relaxed);
+            spectrumDisplayState[(size_t) band] = displayDb;
 
             if (holdEnabled)
             {
@@ -373,10 +376,6 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             {
                 state.heldPeak = targetDb;
                 state.holdAge = 0;
-            }
-            if ((sample + publishCounter) % publishInterval == 0)
-            {
-                spectrumHoldDb[(size_t) band].store(state.heldPeak, std::memory_order_relaxed);
             }
         }
 
@@ -489,9 +488,6 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                     meterPeakHeld[channel] = juce::jmax(outputPeak[ch], meterPeakHeld[channel] * peakDecay);
             }
             meterPeakAge[channel]++;
-            peak[channel].store(meterPeakEnvelope[channel], std::memory_order_relaxed);
-            peakHold[channel].store(meterPeakHeld[channel], std::memory_order_relaxed);
-            rms[channel].store((float) std::sqrt(juce::jmax(0.0, meterRmsPower[channel])), std::memory_order_relaxed);
         }
 
         // Averaged phase correlation: cross and channel powers share the same time constant.
@@ -526,9 +522,21 @@ void MultimeterAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         {
             publishCounter = 0;
             for (int band = 0; band < bandCount; ++band)
+            {
+                spectrumDb[(size_t) band].store(spectrumDisplayState[(size_t) band], std::memory_order_relaxed);
                 spectrumHoldDb[(size_t) band].store(bands[(size_t) band].heldPeak, std::memory_order_relaxed);
+            }
         }
     }
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        peak[(size_t) ch].store(meterPeakEnvelope[(size_t) ch], std::memory_order_relaxed);
+        peakHold[(size_t) ch].store(meterPeakHeld[(size_t) ch], std::memory_order_relaxed);
+        rms[(size_t) ch].store((float) std::sqrt(juce::jmax(0.0, meterRmsPower[(size_t) ch])),
+                               std::memory_order_relaxed);
+    }
+    correlation.store(blockCorrelationValue, std::memory_order_relaxed);
 
     const double blockMean = blockLoudnessEnergy / (double) numSamples;
     integratedEnergySum += blockLoudnessEnergy;
